@@ -389,3 +389,23 @@ if __name__ == '__main__':
     ##get voice data
     print("--------------------PROCESSING VOICE DATA-------------------")
     voice_logs_as_str, all_voice_sessions_list, voice_data_dict, false_awakening_data = get_false_awakening_data(path_to_ve_logs)
+
+    # See which headset data overlaps
+    common_ids = []
+    unique_ids = []
+    for key in false_awakening_data:
+        for headset in durations_dict:
+            hs_id = headset['hs_id']
+            if hs_id == key:
+                if hs_id not in common_ids:
+                    common_ids.append(hs_id)
+    print(f'\nThere are {len(common_ids)} headsets that have both an uptime and false_awakenings:\n{common_ids}')
+
+    for key in false_awakening_data:
+        for headset in durations_dict:
+            hs_id = headset['hs_id']
+            if hs_id != key:
+                if hs_id not in common_ids:
+                    if hs_id not in unique_ids:
+                        unique_ids.append(hs_id)
+    print(f'\nThere are {len(unique_ids)} headsets that have NO uptime AND false awakenings are:\n{unique_ids}')
