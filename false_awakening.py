@@ -2,6 +2,7 @@ import os
 import re
 import datetime
 import argparse
+import subprocess
 
 
 #############LOG PARSING FUNCTIONS####################
@@ -181,6 +182,7 @@ def process_most_likely_outcome(voice_session_data):
 ####: 0 0 1 = headset connected to rfp
 ####VehDet0\s+\(DisabledState\)\s+processing\s+EarlyWarn\s+Mode = headset disconnected from rfp
 def get_all_base_ext_headset_connected_duration(M4_log_path):
+
     all_logs = os.listdir(M4_log_path)
 
     all_logs = [M4_log_path + log for log in all_logs if "base_ext" in log]
@@ -362,22 +364,23 @@ def get_false_awakening_data(path_to_ve_logs):
 
 
 if __name__ == '__main__':
-
-    parser = argparse.ArgumentParser(description='Process False Awakenings')
-    parser.add_argument('--m4_log_path', type=str)
-    parser.add_argument('--ve_log_path', type=str)
-    args = parser.parse_args()
+    # parser = argparse.ArgumentParser(description='Process False Awakenings')
+    # parser.add_argument('--m4_log_path', type=str)
+    # parser.add_argument('--ve_log_path', type=str)
+    # args = parser.parse_args()
 
     ##get headset on off list
-    """
-    m4_log_path = "C:\\Users\\nleal\\logs\\m4_2024-10-26_10-26-02.tar\\m4_2024-10-26_10-26-02\\SYSTEM\\logs\\enc\\m4\\"
-    path_to_ve_logs = "C:\\Users\\nleal\\logs\\voice_engine_2024-10-26_10-26-02.tar\\voice_engine_2024-10-26_10-26-02\\SYSTEM\\logs\\enc\\voice_engine\\"
-    """
-    m4_log_path = args.m4_log_path
-    path_to_ve_logs = args.ve_log_path
+    m4_log_path = 'C://Users//mmarks//MykahFiles//Projects//FalseAwakenings//SYSTEM//logs//enc//m4//'
+    path_to_ve_logs = 'C://Users//mmarks//MykahFiles//Projects//FalseAwakenings//SYSTEM//logs//enc//voice_engine//'
+   
+    # m4_log_path = args.m4_log_path
+    # path_to_ve_logs = args.ve_log_path
 
     print("M4 Log Path: " + m4_log_path)
     print("Voice Engine Log Path: " + path_to_ve_logs)
+
+    command = ['python', '-m', 'false_awakening', '--m4_log_pth', m4_log_path, '--ve_log_path', path_to_ve_logs]
+    subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
     ##process headset durations
     print("--------------------PROCESSING HEADSET DATA-------------------")
