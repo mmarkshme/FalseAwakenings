@@ -376,10 +376,11 @@ if __name__ == '__main__':
     # m4_log_path = args.m4_log_path
     # path_to_ve_logs = args.ve_log_path
 
-    print("M4 Log Path: " + m4_log_path)
-    print("Voice Engine Log Path: " + path_to_ve_logs)
+    # print("M4 Log Path: " + m4_log_path)
+    # print("Voice Engine Log Path: " + path_to_ve_logs)
 
     command = ['python', '-m', 'false_awakening', '--m4_log_pth', m4_log_path, '--ve_log_path', path_to_ve_logs]
+
     subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
     ##process headset durations
@@ -401,11 +402,17 @@ if __name__ == '__main__':
                     common_ids.append(hs_id)
     print(f'\nThere are {len(common_ids)} headsets that have both an uptime and false_awakenings:\n{common_ids}')
 
+    # Extract hs_ids from uptimes
+    uptime_ids = {entry['hs_id'] for entry in durations_dict if isinstance(entry, dict)}
+
+    # Initialize list to store unique IDs
+    unique_ids = []
+
+    # Find unique IDs
     for key in false_awakening_data:
-        for headset in durations_dict:
-            hs_id = headset['hs_id']
-            if hs_id != key:
-                if hs_id not in common_ids:
-                    if hs_id not in unique_ids:
-                        unique_ids.append(hs_id)
-    print(f'\nThere are {len(unique_ids)} headsets that have NO uptime AND false awakenings are:\n{unique_ids}')
+        if key not in uptime_ids and isinstance(false_awakening_data[key], dict) and false_awakening_data[key].get('details', 0) != 0:
+            unique_ids.append(key)
+
+    print(f'\nThere are {len(unique_ids)} headsets that have false awakenings AND NO uptime:\n{unique_ids}')
+
+    
