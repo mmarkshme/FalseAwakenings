@@ -1,7 +1,7 @@
 import os
 import re
 import datetime
-import argparse
+# import argparse
 import subprocess
 
 
@@ -206,30 +206,33 @@ def get_all_base_ext_headset_connected_duration(M4_log_path):
 
 ###converts the log lines into a list of dicts with headset ID, state, and time
 def process_data_set_for_duration(log_list):
-        # initialize dictionary with headset IDs as key, nested key is date, and duration as value, starting at 0
-        headset_dict = []
+    # initialize dictionary with headset IDs as key, nested key is date, and duration as value, starting at 0
+    headset_dict = []
 
-        # loop through each line in logs again
-        # if the line contains 'established' get the time as unix epoch and sum to dict value with headset ID as key
-        # if the line contains 'disconnected' get the time as unix epoch and sum to dict value with headset ID as key
-        this_id = None
-        last_state = None
-        for line in log_list:
-            this_timestamp = extract_timestamp_m4(line)
+    # loop through each line in logs again
+    # if the line contains 'established' get the time as unix epoch and sum to dict value with headset ID as key
+    # if the line contains 'disconnected' get the time as unix epoch and sum to dict value with headset ID as key
+    this_id = None
+    last_state = None
+    for line in log_list:
+        this_timestamp = extract_timestamp_m4(line)
 
-            if ': 0 0 1' in line:
-                if last_state != 'on':
-                    this_id = line.split('Headset')[1].split(':')[0]
-                    headset_dict.append({"hs_id": this_id, "state": "on", "time": this_timestamp})
-                    last_state = 'on'
+        if ': 0 0 1' in line:
+            # if last_state != 'on':
+                this_id = line.split('Headset')[1].split(':')[0]
+                headset_dict.append({"hs_id": this_id, "state": "on", "time": this_timestamp})
+                last_state = 'on'
 
-            elif 'disconnected' in line or 'VehDet0' in line:
-                if last_state != 'off':
-                    if this_id is not None:
-                        headset_dict.append({"hs_id": this_id, "state": "off", "time": this_timestamp})
-                        last_state = 'off'
+        elif 'disconnected' in line: # or 'VehDet0' in line
+            # if last_state != 'off':
+                if this_id is not None:
+                    headset_dict.append({"hs_id": this_id, "state": "off", "time": this_timestamp})
+                    last_state = 'off'
 
-        return headset_dict
+
+        # Change this to get headset id and then keep checking lines until it finds the corresponding "off" entry...
+
+    return headset_dict
 
 ###parses voice sessions list into a list of dicts with session start, session end, duration, what VE thought was said, headset ID, subsequent actions taken, and most likely outcome
 def get_voice_session_data(voice_session_list: list):
@@ -370,14 +373,15 @@ if __name__ == '__main__':
     # args = parser.parse_args()
 
     ##get headset on off list
-    m4_log_path = 'C://Users//mmarks//MykahFiles//Projects//FalseAwakenings//SYSTEM//logs//enc//m4//'
-    path_to_ve_logs = 'C://Users//mmarks//MykahFiles//Projects//FalseAwakenings//SYSTEM//logs//enc//voice_engine//'
+    m4_log_path = 'C:/Users/mmarks/MykahFiles/Projects/FalseAwakenings/SYSTEM/logs/enc/m4/'
+    path_to_ve_logs = 'C:/Users/mmarks/MykahFiles/Projects/FalseAwakenings/SYSTEM/logs/enc/voice_engine/'
    
     # m4_log_path = args.m4_log_path
     # path_to_ve_logs = args.ve_log_path
+    
 
-    # print("M4 Log Path: " + m4_log_path)
-    # print("Voice Engine Log Path: " + path_to_ve_logs)
+    print("M4 Log Path: " + m4_log_path)
+    print("Voice Engine Log Path: " + path_to_ve_logs)
 
     command = ['python', '-m', 'false_awakening', '--m4_log_pth', m4_log_path, '--ve_log_path', path_to_ve_logs]
 
