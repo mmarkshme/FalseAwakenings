@@ -3,6 +3,8 @@ import re
 import datetime
 # import argparse
 import subprocess
+import re
+from pickle import EMPTY_LIST
 
 
 #############LOG PARSING FUNCTIONS####################
@@ -198,7 +200,7 @@ def get_all_base_ext_headset_connected_duration(M4_log_path):
         if "but thinks it is still" in line:
             all_on_off.remove(line)
 
-    all_on_off = remove_consecutive_duplicates(all_on_off)
+    # all_on_off = remove_consecutive_duplicates(all_on_off)
 
     return all_on_off
 
@@ -208,29 +210,32 @@ def get_all_base_ext_headset_connected_duration(M4_log_path):
 def process_data_set_for_duration(log_list):
     # initialize dictionary with headset IDs as key, nested key is date, and duration as value, starting at 0
     headset_dict = []
+    new_dict = {}
 
     # loop through each line in logs again
     # if the line contains 'established' get the time as unix epoch and sum to dict value with headset ID as key
     # if the line contains 'disconnected' get the time as unix epoch and sum to dict value with headset ID as key
-    this_id = None
-    last_state = None
+    headset_times = {}
+    on_pattern = 'Headset([0-9]+)(: 0 0 1)'
+    off_pattern = 'PP([0-9]+) (disconnected)$'
+
     for line in log_list:
-        this_timestamp = extract_timestamp_m4(line)
-
-        if ': 0 0 1' in line:
-            # if last_state != 'on':
-                this_id = line.split('Headset')[1].split(':')[0]
-                headset_dict.append({"hs_id": this_id, "state": "on", "time": this_timestamp})
-                last_state = 'on'
-
-        elif 'disconnected' in line: # or 'VehDet0' in line
-            # if last_state != 'off':
-                if this_id is not None:
-                    headset_dict.append({"hs_id": this_id, "state": "off", "time": this_timestamp})
-                    last_state = 'off'
+        on_match = re.findall(on_pattern, line)
+        if on_match:
+            hs_id = on_match[0][0]
+            this_timestamp = extract_timestamp_m4(line)
+            if hs_id not in headset_times:
+                headset_times[hs_id] = {"on": [], "off": []}
+            headset_times[hs_id]["on"].append(this_timestamp)
 
 
-        # Change this to get headset id and then keep checking lines until it finds the corresponding "off" entry...
+        off_match = re.findall(off_pattern, line)
+        if off_match:
+            hs_id = off_match[0][0]
+            this_timestamp = extract_timestamp_m4(line)
+            if hs_id in headset_times:  # Only add off time if hs_id exists
+                headset_times[hs_id]["off"].append(this_timestamp)
+
 
     return headset_dict
 
