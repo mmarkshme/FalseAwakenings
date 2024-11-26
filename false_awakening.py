@@ -240,8 +240,10 @@ def process_data_set_for_duration(headset_on_off_raw_list, all_data, start_date,
                         headset_dict[hs_id]["off"].append({"timestamp": this_timestamp, "line": line})
                         headset_dict[hs_id]["events"].append({"type": "off", "timestamp": this_timestamp, "line": line})
 
+    print(f'\nBefore removing duplicates:'); notify_on_matches(headset_dict, all_data)
+
     # Remove back-to-back 'on' and 'off' entries with the younger timestamp
-    # headset_dict = remove_back_to_back_entries(headset_dict)
+    headset_dict = remove_back_to_back_entries(headset_dict)
 
     # Update ordered_events after removing duplicates
     ordered_events = []
@@ -249,7 +251,26 @@ def process_data_set_for_duration(headset_on_off_raw_list, all_data, start_date,
         ordered_events.extend(headset_dict[hs_id]["events"])
     ordered_events.sort(key=lambda x: x["timestamp"])
 
+    print('\nAfter removing duplicates:'); notify_on_matches(headset_dict, all_data)
+
+    return headset_dict
+
+def get_all_data_between_ons(all_data, first_event, second_event, filename):
+    r_all_between = f'({first_event}([\s\S]*){second_event})'
+    for log in all_data:
+        matches = re.findall(r_all_between, log, re.MULTILINE)
+        if matches:
+            with open(filename, 'w') as file:
+                print(f'\nAll data between "{first_event}" and "{second_event}"')
+                all_data_between_events = matches[0][0]
+                # pprint.pprint(all_data_between_events)
+                file.write(all_data_between_events + '\n')
+
+
+def notify_on_matches(headset_dict, all_data):
     # Notify for back-to-back on_matches and capture data between them
+    total_btb_ons = 0
+    total_btb_offs = 0
     for hs_id, data in headset_dict.items():
         events = data["events"]
         on_count = 0
@@ -257,13 +278,26 @@ def process_data_set_for_duration(headset_on_off_raw_list, all_data, start_date,
         for i in range(1, len(events)):
             if events[i]["type"] == "on" and events[i - 1]["type"] == "on":
                 on_count += 1
-                print(f"Alert: Back-to-back on_matches for headset {hs_id} at {events[i]['timestamp']} and {events[i - 1]['timestamp']}")
+                total_btb_ons += 1
+                filename = f'(consecutive_on_event_{total_btb_ons}.txt)'
+                first_event = events[i - 1]["line"].replace('\n', '').replace("/",'\/').replace('[','\[').replace(']', '\]')
+                second_event = events[i]["line"].replace('\n', '').replace("/",'\/').replace('[','\[').replace(']', '\]')
+                first_event_time = events[i - 1]['timestamp']
+                second_event_time = events[i]['timestamp']
+                # print(f"Alert: Back-to-back on_matches for headset {hs_id} at {first_event_time} and {second_event_time}")
+                get_all_data_between_ons(all_data, first_event, second_event, filename)
             elif events[i]["type"] == "off" and events[i - 1]["type"] == "off":
                 off_count += 1
-                print(f"Alert: Back-to-back off_matches for headset {hs_id} at {events[i]['timestamp']} and {events[i - 1]['timestamp']}")
+                total_btb_offs += 1
+                filename = f'(consecutive_off_event_{total_btb_offs}.txt)'
+                first_event = events[i - 1]["line"].replace("/",'\/').replace('[','\[').replace(']', '\]')
+                second_event = events[i]["line"].replace("/",'\/').replace('[','\[').replace(']', '\]')
+                first_event_time = events[i - 1]['timestamp']
+                second_event_time = events[i]['timestamp']
+                # print(f"Alert: Back-to-back off_matches for headset {hs_id} at {first_event_time} and {second_event_time}")
+                get_all_data_between_ons(all_data, first_event, second_event, filename)
         print(f"Headset {hs_id} has {on_count} on_matches and {off_count} off_matches.")
-
-    return headset_dict
+    print(f'In total there are {total_btb_ons} back_to_back on matches and {total_btb_offs} back-to-back off matches')
 
 def remove_back_to_back_entries(headset_dict):
     for hs_id in headset_dict:
@@ -304,17 +338,6 @@ def remove_back_to_back_entries(headset_dict):
 
     return headset_dict
 
-
-# def get_all_data_between_ons(all_data, start_index, end_index):
-#     r_all_between = '([0-9]{2}\/[0-9]{2}\/[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}.[0-9]{3} [A-Z] \[Switch\]Headset[0-9]+: 0 0 1)([\s\S]*)([0-9]{2}\/[0-9]{2}\/[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}.[0-9]{3} [A-Z] \[Switch\]Headset[0-9]+: 0 0 1)'
-#
-#     for log in all_data:
-#         matches = re.findall(r_all_between, log)
-#         print(f'All data between "{matches[0][0]}" and "{matches[0][2]}"')
-#         all_data_between_ons = matches[0][1]
-#         pprint.pprint(all_data_between_ons)
-#
-#     return all_data_between_ons
 
 ###parses voice sessions list into a list of dicts with session start, session end, duration, what VE thought was said, headset ID, subsequent actions taken, and most likely outcome
 def get_voice_session_data(voice_session_list: list):
@@ -460,11 +483,11 @@ def get_false_awakening_data(path_to_ve_logs):
 
 if __name__ == '__main__':
     ##get headset on off list
-    m4_log_path = 'C:/Users/mmarks/MykahFiles/Projects/FalseAwakenings/SYSTEM/logs/enc/m4/'
+    m4_log_path = 'C:/Users/mmarks/MykahFiles/Projects/FalseAwakenings/SYSTEM/logs/enc/m4_hs2_hs8/'
     path_to_ve_logs = 'C:/Users/mmarks/MykahFiles/Projects/FalseAwakenings/SYSTEM/logs/enc/voice_engine/'
 
-    start_date = "2024-10-11 11:50:00"
-    end_date = "2024-10-23 11:30:00"
+    start_date = "2024-11-01 00:50:00"
+    end_date = "2024-11-26 23:30:00"
 
     print("M4 Log Path: " + m4_log_path)
     print("Voice Engine Log Path: " + path_to_ve_logs)
