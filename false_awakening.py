@@ -466,37 +466,6 @@ def get_hs_durations(m4_log_path, start_date, end_date):
 
     return headset_on_off_raw_list, durations_dict, uptimes
 
-def get_false_awakening_data(path_to_ve_logs, criteria):
-    print("Getting Voice Engine Logs as a single string...")
-    # Put voice engine log into a single string
-    all_logs_in_str = get_all_voice_logs_as_str(path_to_ve_logs)
-
-    print("Parsing String as list of voice sessions...")
-    # Parse voice engine logs
-    all_voice_sessions = parse_all_voice_logs_by_voice_session(all_logs_in_str)
-
-    print("Processing Voice Data...")
-    voice_data = []
-
-    for session in all_voice_sessions:
-        # Extract the session date from the session data
-        session_date_str = session[1][1:18]  # Assuming the date is in the format 'MM/DD/YY HH:MM:SS' at the start of the session
-        session_date = datetime.strptime(session_date_str, "%m/%d/%y %H:%M:%S")
-
-        this_session_data = get_voice_session_data(session)
-
-        if this_session_data is not None:
-            voice_data.append(this_session_data)
-
-    print("Extracting False Awakenings...")
-    false_awakening_data = extract_false_awakenings(voice_data, criteria)
-
-    print("False Awakenings: ")
-    for key, value in false_awakening_data.items():
-        print(f'Headset ID: {key}, False Awakenings: {str(value)}')
-
-    return all_logs_in_str, all_voice_sessions, voice_data, false_awakening_data
-
 def get_false_awakening_data_bound(path_to_ve_logs, start_date, end_date, criteria):
     print("Getting Voice Engine Logs as a single string...")
     # Put voice engine log into a single string
@@ -558,9 +527,7 @@ if __name__ == '__main__':
 
     ##get voice data
     print("--------------------PROCESSING VOICE DATA-------------------")
-    # voice_logs_as_str, all_voice_sessions_list, voice_data_dict, false_awakening_data = get_false_awakening_data(path_to_ve_logs, non_incl_criteria)
-    # voice_logs_as_str, all_voice_sessions_list, voice_data_dict, false_awakening_data = get_false_awakening_data(path_to_ve_logs, incl_criteria)
-    # voice_logs_as_str, all_voice_sessions_list, voice_data_dict, false_awakening_data = get_false_awakening_data_bound(path_to_ve_logs, start_date, end_date, non_incl_criteria)
-    voice_logs_as_str, all_voice_sessions_list, voice_data_dict, false_awakening_data = get_false_awakening_data_bound(path_to_ve_logs, start_date, end_date, incl_criteria)
+    voice_logs_as_str, all_voice_sessions_list, voice_data_dict, false_awakening_data = get_false_awakening_data_bound(path_to_ve_logs, start_date, end_date, non_incl_criteria)
+    # voice_logs_as_str, all_voice_sessions_list, voice_data_dict, false_awakening_data = get_false_awakening_data_bound(path_to_ve_logs, start_date, end_date, incl_criteria)
 
     
