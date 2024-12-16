@@ -2,6 +2,7 @@ SYSTEM/
 venv/
 __pycache__
 TODO.md
-Imported_files/
+ImportedFiles/
+GeneratedFiles/
 .idea/
 Ignore/
