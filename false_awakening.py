@@ -3,6 +3,7 @@ import re
 # import argparse
 import subprocess
 import re
+from pathlib import Path
 from datetime import datetime, timedelta
 from pickle import EMPTY_LIST
 import pprint
@@ -179,6 +180,10 @@ def process_most_likely_outcome(voice_session_data):
             voice_session_data["What VE thought was said"].split()) == 2):
         voice_session_data["Most Likely Outcome"] = "No Action From VE"
 
+    if 8 < int(voice_session_data["Headset ID"]) < 18:
+        outcome = voice_session_data["Most Likely Outcome"]
+        # if outcome is "Other" or outcome is "Timeout":
+        print(f'{voice_session_data["Headset ID"]}, {voice_session_data["What VE thought was said"]}, {voice_session_data["Subsequent Actions Taken"]}, {voice_session_data["Session Start"]}, {voice_session_data["Most Likely Outcome"]}, {voice_session_data["Duration"]}')
 
 ###gets all headset on off lines from m4 logs and sorts them chronologically
 ####PP[1-9][0-9]* disconnected = headset disconnected from rfp
@@ -257,13 +262,15 @@ def process_data_set_for_duration(headset_on_off_raw_list, all_data, start_date,
 
 def get_all_data_between_ons(all_data, first_event, second_event, filename):
     r_all_between = f'({first_event}([\s\S]*){second_event})'
+    output_dir = Path('GeneratedFiles')
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_path = output_dir / filename
+
     for log in all_data:
         matches = re.findall(r_all_between, log, re.MULTILINE)
         if matches:
-            with open(filename, 'w') as file:
-                print(f'\nAll data between "{first_event}" and "{second_event}"')
+            with open(output_path, 'w') as file:
                 all_data_between_events = matches[0][0]
-                # pprint.pprint(all_data_between_events)
                 file.write(all_data_between_events + '\n')
 
 
@@ -345,7 +352,6 @@ def get_voice_session_data(voice_session_list: list):
                           "Headset ID": "",
                           "Subsequent Actions Taken": [], "Most Likely Outcome": "Other"}
     actions_taken = []
-
     for line in voice_session_list:
         try:
             if line != "":
@@ -369,7 +375,6 @@ def get_voice_session_data(voice_session_list: list):
                         voice_session_data["Session End"] = line[1:18]
                         process_duration(voice_session_data)
                         voice_session_data["Subsequent Actions Taken"] = actions_taken
-
                         process_most_likely_outcome(voice_session_data)
                         break
                 if line == voice_session_list[-1]:
@@ -390,16 +395,25 @@ def get_voice_session_data(voice_session_list: list):
     else:
         return voice_session_data
 
-###extracts and sums false awakenings from voice data
-def extract_false_awakenings(voice_data):
-    false_awakenings_data = {voice_data['Headset ID']: 0 for voice_data in voice_data if voice_data['Headset ID'] != ""}
 
-    for data in voice_data:
+###extracts and sums false awakenings from voice data
+def extract_false_awakenings(voice_data, criteria):
+    # Sort the voice data by 'Headset ID'
+    sorted_voice_data = sorted(voice_data, key=lambda x: x['Headset ID'])
+
+    # Initialize the dictionary to store false awakenings count
+    false_awakenings_data = {data['Headset ID']: 0 for data in sorted_voice_data if data['Headset ID'] != ""}
+
+    # Count false awakenings
+    for data in sorted_voice_data:
         if data['Headset ID'] != "":
-            if data['Most Likely Outcome'] == 'Other' or data['Most Likely Outcome'] == 'Timeout':
+            if data['Most Likely Outcome'] in criteria:
                 false_awakenings_data[data['Headset ID']] += 1
 
-    return false_awakenings_data
+    # Sort the false awakenings data by 'Headset ID'
+    sorted_false_awakenings = dict(sorted(false_awakenings_data.items()))
+
+    return sorted_false_awakenings
 
 ###gets the total uptime for each headset from the durations list
 def get_total_uptime_per_headset(durations):
@@ -452,42 +466,88 @@ def get_hs_durations(m4_log_path, start_date, end_date):
 
     return headset_on_off_raw_list, durations_dict, uptimes
 
-###gets all voice data
-###returns full lifecycle of data. From raw log as string ->  list of voice sessions -> voice data with classifications -> false awakenings determinations
-def get_false_awakening_data(path_to_ve_logs):
+def get_false_awakening_data(path_to_ve_logs, criteria):
     print("Getting Voice Engine Logs as a single string...")
-    ##put voice engine log into a single string
+    # Put voice engine log into a single string
     all_logs_in_str = get_all_voice_logs_as_str(path_to_ve_logs)
 
-
     print("Parsing String as list of voice sessions...")
-    ##parse voice engine logs
+    # Parse voice engine logs
     all_voice_sessions = parse_all_voice_logs_by_voice_session(all_logs_in_str)
 
     print("Processing Voice Data...")
     voice_data = []
+
     for session in all_voice_sessions:
+        # Extract the session date from the session data
+        session_date_str = session[1][1:18]  # Assuming the date is in the format 'MM/DD/YY HH:MM:SS' at the start of the session
+        session_date = datetime.strptime(session_date_str, "%m/%d/%y %H:%M:%S")
+
         this_session_data = get_voice_session_data(session)
 
         if this_session_data is not None:
             voice_data.append(this_session_data)
 
     print("Extracting False Awakenings...")
-    false_awakening_data = extract_false_awakenings(voice_data)
+    false_awakening_data = extract_false_awakenings(voice_data, criteria)
 
     print("False Awakenings: ")
-    print(false_awakening_data)
+    for key, value in false_awakening_data.items():
+        print(f'Headset ID: {key}, False Awakenings: {str(value)}')
 
     return all_logs_in_str, all_voice_sessions, voice_data, false_awakening_data
 
+def get_false_awakening_data_bound(path_to_ve_logs, start_date, end_date, criteria):
+    print("Getting Voice Engine Logs as a single string...")
+    # Put voice engine log into a single string
+    all_logs_in_str = get_all_voice_logs_as_str(path_to_ve_logs)
+
+    print("Parsing String as list of voice sessions...")
+    # Parse voice engine logs
+    all_voice_sessions = parse_all_voice_logs_by_voice_session(all_logs_in_str)
+
+    print("Processing Voice Data...")
+    voice_data = []
+
+    # Convert start_date and end_date to datetime objects
+    start_date = datetime.strptime(start_date, "%Y-%m-%d %H:%M:%S")
+    end_date = datetime.strptime(end_date, "%Y-%m-%d %H:%M:%S")
+
+    for session in all_voice_sessions:
+        # Extract the session date from the session data
+        session_date_str = session[1][1:18]  # Assuming the date is in the format 'MM/DD/YY HH:MM:SS' at the start of the session
+        session_date = datetime.strptime(session_date_str, "%m/%d/%y %H:%M:%S")
+
+        # Check if the session date is within the given range
+        if start_date <= session_date <= end_date:
+            this_session_data = get_voice_session_data(session)
+
+            if this_session_data is not None:
+                voice_data.append(this_session_data)
+
+    print("Extracting False Awakenings...")
+    false_awakening_data = extract_false_awakenings(voice_data, criteria)
+
+    print("False Awakenings: ")
+    for key, value in false_awakening_data.items():
+        print(f'Headset ID: {key}, False Awakenings: {str(value)}')
+
+    return all_logs_in_str, all_voice_sessions, voice_data, false_awakening_data
 
 if __name__ == '__main__':
     ##get headset on off list
-    m4_log_path = 'C:/Users/mmarks/MykahFiles/Projects/FalseAwakenings/SYSTEM/logs/enc/m4_hs2_hs8/'
-    path_to_ve_logs = 'C:/Users/mmarks/MykahFiles/Projects/FalseAwakenings/SYSTEM/logs/enc/voice_engine/'
+    # m4_log_path = 'C:/Users/mmarks/MykahFiles/Projects/FalseAwakenings/SYSTEM/logs/enc/m4_hs2_hs8/'
+    m4_log_path = 'C:/Users/mmarks/MykahFiles/Projects/FalseAwakenings/SYSTEM/logs/enc/m4_jackinthebox/'
+    # path_to_ve_logs = 'C:/Users/mmarks/MykahFiles/Projects/FalseAwakenings/SYSTEM/logs/enc/voice_engine_2024-12-10/'
+    path_to_ve_logs = 'C:/Users/mmarks/MykahFiles/Projects/FalseAwakenings/SYSTEM/logs/enc/voice_engine_jackinthebox/'
 
-    start_date = "2024-11-01 00:50:00"
-    end_date = "2024-11-26 23:30:00"
+    non_incl_criteria = ["Timeout", "Other"]
+    incl_criteria = ["Reject", "Timeout", "Other", "Reject-User Not Notified", "Timeout-User Not Notified"]
+
+    start_date = "2024-10-11 11:50:00"
+    # start_date = "2024-12-10 9:50:00"
+    end_date = "2024-10-23 11:30:00"
+    # end_date = "2024-12-10 17:30:00"
 
     print("M4 Log Path: " + m4_log_path)
     print("Voice Engine Log Path: " + path_to_ve_logs)
@@ -498,6 +558,9 @@ if __name__ == '__main__':
 
     ##get voice data
     print("--------------------PROCESSING VOICE DATA-------------------")
-    voice_logs_as_str, all_voice_sessions_list, voice_data_dict, false_awakening_data = get_false_awakening_data(path_to_ve_logs)
+    # voice_logs_as_str, all_voice_sessions_list, voice_data_dict, false_awakening_data = get_false_awakening_data(path_to_ve_logs, non_incl_criteria)
+    # voice_logs_as_str, all_voice_sessions_list, voice_data_dict, false_awakening_data = get_false_awakening_data(path_to_ve_logs, incl_criteria)
+    # voice_logs_as_str, all_voice_sessions_list, voice_data_dict, false_awakening_data = get_false_awakening_data_bound(path_to_ve_logs, start_date, end_date, non_incl_criteria)
+    voice_logs_as_str, all_voice_sessions_list, voice_data_dict, false_awakening_data = get_false_awakening_data_bound(path_to_ve_logs, start_date, end_date, incl_criteria)
 
     
