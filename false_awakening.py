@@ -95,16 +95,22 @@ def get_log_lines_as_list(file_path):
 
 ###returns all voice engine logs as a single string
 def get_all_voice_logs_as_str(path_to_ve_logs):
-    # Get all file names in the folder
-    all_files_in_path = os.listdir(path_to_ve_logs)
+    all_logs = []
 
-    # Only look for voice_engine logs
-    all_logs = [path_to_ve_logs + log for log in all_files_in_path if "voice_engine" in log]
+    # Walk through the directory tree
+    for root, dirs, files in os.walk(path_to_ve_logs):
+        print(f"Current directory: {root}")
+        print(f"Files: {files}")
+        for file in files:
+            print(f"Checking file: {file}")
+            if "voice_engine" in file:
+                print(f"Found matching file: {file}")
+                all_logs.append(os.path.join(root, file))
 
     # Concatenate all logs into a single string
     all_logs_in_str = ""
     for log in all_logs:
-        all_logs_in_str = all_logs_in_str + "\n" + get_file_contents_as_string_variable(log)
+        all_logs_in_str += "\n" + get_file_contents_as_string_variable(log)
 
     return all_logs_in_str
 
@@ -180,24 +186,36 @@ def process_most_likely_outcome(voice_session_data):
             voice_session_data["What VE thought was said"].split()) == 2):
         voice_session_data["Most Likely Outcome"] = "No Action From VE"
 
-    if 8 < int(voice_session_data["Headset ID"]) < 18:
+    # if 8 < int(voice_session_data["Headset ID"]) < 18:
         outcome = voice_session_data["Most Likely Outcome"]
         # if outcome is "Other" or outcome is "Timeout":
-        print(f'{voice_session_data["Headset ID"]}, {voice_session_data["What VE thought was said"]}, {voice_session_data["Subsequent Actions Taken"]}, {voice_session_data["Session Start"]}, {voice_session_data["Most Likely Outcome"]}, {voice_session_data["Duration"]}')
+    print(f'{voice_session_data["Headset ID"]}, {voice_session_data["What VE thought was said"]}, {voice_session_data["Subsequent Actions Taken"]}, {voice_session_data["Session Start"]}, {voice_session_data["Most Likely Outcome"]}, {voice_session_data["Duration"]}')
 
 ###gets all headset on off lines from m4 logs and sorts them chronologically
 ####PP[1-9][0-9]* disconnected = headset disconnected from rfp
 ####: 0 0 1 = headset connected to rfp
 ####VehDet0\s+\(DisabledState\)\s+processing\s+EarlyWarn\s+Mode = headset disconnected from rfp
 def get_all_base_ext_headset_connected_duration(M4_log_path):
-
-    all_logs = os.listdir(M4_log_path)
+    all_logs = []
     all_data = []
     all_on_off = set()
-    all_logs = [M4_log_path + log for log in all_logs if "base_ext" in log]
+
+    # Print the directory being searched
+    print(f"Searching in directory: {M4_log_path}")
+
+    # Walk through the directory tree
+    for root, dirs, files in os.walk(M4_log_path):
+        print(f"Current directory: {root}")
+        print(f"Files: {files}")
+        for file in files:
+            print(f"Checking file: {file}")
+            if "base_ext" in file:
+                print(f"Found matching file: {file}")
+                all_logs.append(os.path.join(root, file))
+
     for log in all_logs:
         on_off = find_matching_lines_regex(log, [r"PP[1-9][0-9]* disconnected", ": 0 0 1",
-                                                      "VehDet0\s+\(DisabledState\)\s+processing\s+EarlyWarn\s+Mode"])
+                                                 "VehDet0\s+\(DisabledState\)\s+processing\s+EarlyWarn\s+Mode"])
         all_on_off.update(on_off)
         all_data.append(get_file_contents_as_string_variable(log))
 
@@ -506,17 +524,19 @@ def get_false_awakening_data_bound(path_to_ve_logs, start_date, end_date, criter
 if __name__ == '__main__':
     ##get headset on off list
     # m4_log_path = 'C:/Users/mmarks/MykahFiles/Projects/FalseAwakenings/SYSTEM/logs/enc/m4_hs2_hs8/'
-    m4_log_path = 'C:/Users/mmarks/MykahFiles/Projects/FalseAwakenings/SYSTEM/logs/enc/m4_jackinthebox/'
+    # m4_log_path = 'C:/Users/mmarks/MykahFiles/Projects/FalseAwakenings/SYSTEM/logs/enc/m4_jackinthebox/'
+    m4_log_path = 'C:/Users/mmarks/MykahFiles/Projects/FalseAwakenings/SYSTEM/logs/enc/m4/'
     # path_to_ve_logs = 'C:/Users/mmarks/MykahFiles/Projects/FalseAwakenings/SYSTEM/logs/enc/voice_engine_2024-12-10/'
-    path_to_ve_logs = 'C:/Users/mmarks/MykahFiles/Projects/FalseAwakenings/SYSTEM/logs/enc/voice_engine_jackinthebox/'
+    # path_to_ve_logs = 'C:/Users/mmarks/MykahFiles/Projects/FalseAwakenings/SYSTEM/logs/enc/voice_engine_jackinthebox/'
+    path_to_ve_logs = 'C:/Users/mmarks/MykahFiles/Projects/FalseAwakenings/SYSTEM/logs/enc/voice_engine/'
 
     non_incl_criteria = ["Timeout", "Other"]
     incl_criteria = ["Reject", "Timeout", "Other", "Reject-User Not Notified", "Timeout-User Not Notified"]
 
-    start_date = "2024-10-11 11:50:00"
-    # start_date = "2024-12-10 9:50:00"
-    end_date = "2024-10-23 11:30:00"
-    # end_date = "2024-12-10 17:30:00"
+    # start_date = "2024-10-11 11:50:00"
+    start_date = "2024-11-1 00:00:00"
+    # end_date = "2024-10-23 11:30:00"
+    end_date = "2024-12-16 23:59:59"
 
     print("M4 Log Path: " + m4_log_path)
     print("Voice Engine Log Path: " + path_to_ve_logs)
