@@ -1,12 +1,8 @@
 import os
 import re
-# import argparse
-import subprocess
-import re
 from pathlib import Path
 from datetime import datetime, timedelta
-from pickle import EMPTY_LIST
-import pprint
+from matplotlib import pyplot as plt
 
 
 #############LOG PARSING FUNCTIONS####################
@@ -99,12 +95,12 @@ def get_all_voice_logs_as_str(path_to_ve_logs):
 
     # Walk through the directory tree
     for root, dirs, files in os.walk(path_to_ve_logs):
-        print(f"Current directory: {root}")
-        print(f"Files: {files}")
+        # print(f"Current directory: {root}")
+        # print(f"Files: {files}")
         for file in files:
-            print(f"Checking file: {file}")
+            # print(f"Checking file: {file}")
             if "voice_engine" in file:
-                print(f"Found matching file: {file}")
+                # print(f"Found matching file: {file}")
                 all_logs.append(os.path.join(root, file))
 
     # Concatenate all logs into a single string
@@ -187,9 +183,9 @@ def process_most_likely_outcome(voice_session_data):
         voice_session_data["Most Likely Outcome"] = "No Action From VE"
 
     # if 8 < int(voice_session_data["Headset ID"]) < 18:
-        outcome = voice_session_data["Most Likely Outcome"]
+    #     outcome = voice_session_data["Most Likely Outcome"]
         # if outcome is "Other" or outcome is "Timeout":
-    print(f'{voice_session_data["Headset ID"]}, {voice_session_data["What VE thought was said"]}, {voice_session_data["Subsequent Actions Taken"]}, {voice_session_data["Session Start"]}, {voice_session_data["Most Likely Outcome"]}, {voice_session_data["Duration"]}')
+    # print(f'{voice_session_data["Headset ID"]}, {voice_session_data["What VE thought was said"]}, {voice_session_data["Subsequent Actions Taken"]}, {voice_session_data["Session Start"]}, {voice_session_data["Most Likely Outcome"]}, {voice_session_data["Duration"]}')
 
 ###gets all headset on off lines from m4 logs and sorts them chronologically
 ####PP[1-9][0-9]* disconnected = headset disconnected from rfp
@@ -201,16 +197,16 @@ def get_all_base_ext_headset_connected_duration(M4_log_path):
     all_on_off = set()
 
     # Print the directory being searched
-    print(f"Searching in directory: {M4_log_path}")
+    # print(f"Searching in directory: {M4_log_path}")
 
     # Walk through the directory tree
     for root, dirs, files in os.walk(M4_log_path):
-        print(f"Current directory: {root}")
-        print(f"Files: {files}")
+        # print(f"Current directory: {root}")
+        # print(f"Files: {files}")
         for file in files:
-            print(f"Checking file: {file}")
+            # print(f"Checking file: {file}")
             if "base_ext" in file:
-                print(f"Found matching file: {file}")
+                # print(f"Found matching file: {file}")
                 all_logs.append(os.path.join(root, file))
 
     for log in all_logs:
@@ -263,7 +259,7 @@ def process_data_set_for_duration(headset_on_off_raw_list, all_data, start_date,
                         headset_dict[hs_id]["off"].append({"timestamp": this_timestamp, "line": line})
                         headset_dict[hs_id]["events"].append({"type": "off", "timestamp": this_timestamp, "line": line})
 
-    print(f'\nBefore removing duplicates:'); notify_on_matches(headset_dict, all_data)
+    # print(f'\nBefore removing duplicates:'); notify_on_matches(headset_dict, all_data)
 
     # Remove back-to-back 'on' and 'off' entries with the younger timestamp
     headset_dict = remove_back_to_back_entries(headset_dict)
@@ -274,7 +270,7 @@ def process_data_set_for_duration(headset_on_off_raw_list, all_data, start_date,
         ordered_events.extend(headset_dict[hs_id]["events"])
     ordered_events.sort(key=lambda x: x["timestamp"])
 
-    print('\nAfter removing duplicates:'); notify_on_matches(headset_dict, all_data)
+    # print('\nAfter removing duplicates:'); notify_on_matches(headset_dict, all_data)
 
     return headset_dict
 
@@ -321,8 +317,8 @@ def notify_on_matches(headset_dict, all_data):
                 second_event_time = events[i]['timestamp']
                 # print(f"Alert: Back-to-back off_matches for headset {hs_id} at {first_event_time} and {second_event_time}")
                 get_all_data_between_ons(all_data, first_event, second_event, filename)
-        print(f"Headset {hs_id} has {on_count} on_matches and {off_count} off_matches.")
-    print(f'In total there are {total_btb_ons} back_to_back on matches and {total_btb_offs} back-to-back off matches')
+        # print(f"Headset {hs_id} has {on_count} on_matches and {off_count} off_matches.")
+    # print(f'In total there are {total_btb_ons} back_to_back on matches and {total_btb_offs} back-to-back off matches')
 
 def remove_back_to_back_entries(headset_dict):
     for hs_id in headset_dict:
@@ -482,9 +478,14 @@ def get_hs_durations(m4_log_path, start_date, end_date):
     total_uptime_hours = sum(uptimes_in_hours.values())
     print(f"Total uptime in hours: {total_uptime_hours}")
 
-    return headset_on_off_raw_list, durations_dict, uptimes
+    return headset_on_off_raw_list, durations_dict, uptimes_in_hours
 
-def get_false_awakening_data_bound(path_to_ve_logs, start_date, end_date, criteria):
+def get_false_awakening_data_bound(path_to_ve_logs, start_date, end_date, selection, headsets, days, uptimes):
+    if selection == 1:
+        criteria = ["Timeout", "Other"]
+    else:
+        criteria = ["Reject", "Timeout", "Other", "Reject-User Not Notified", "Timeout-User Not Notified"]
+
     print("Getting Voice Engine Logs as a single string...")
     # Put voice engine log into a single string
     all_logs_in_str = get_all_voice_logs_as_str(path_to_ve_logs)
@@ -494,44 +495,169 @@ def get_false_awakening_data_bound(path_to_ve_logs, start_date, end_date, criter
     all_voice_sessions = parse_all_voice_logs_by_voice_session(all_logs_in_str)
 
     print("Processing Voice Data...")
-    voice_data = []
+    weekly_uptimes = {}
+    all_voice_data = []
 
     # Convert start_date and end_date to datetime objects
     start_date = datetime.strptime(start_date, "%Y-%m-%d %H:%M:%S")
     end_date = datetime.strptime(end_date, "%Y-%m-%d %H:%M:%S")
 
-    for session in all_voice_sessions:
-        # Extract the session date from the session data
-        session_date_str = session[1][1:18]  # Assuming the date is in the format 'MM/DD/YY HH:MM:SS' at the start of the session
-        session_date = datetime.strptime(session_date_str, "%m/%d/%y %H:%M:%S")
+    # Filter uptimes to include only selected headsets
+    filtered_uptimes = {key: value for key, value in uptimes.items() if key in headsets}
 
-        # Check if the session date is within the given range
-        if start_date <= session_date <= end_date:
-            this_session_data = get_voice_session_data(session)
+    # Initialize the current start date for the first week
+    current_start_date = start_date
 
-            if this_session_data is not None:
-                voice_data.append(this_session_data)
+    while current_start_date <= end_date:
+        # Calculate the end date for the current week
+        current_end_date = current_start_date + timedelta(days=6, hours=23, minutes=59, seconds=59)
 
-    print("Extracting False Awakenings...")
-    false_awakening_data = extract_false_awakenings(voice_data, criteria)
+        # Ensure the current end date does not exceed the overall end date
+        if current_end_date > end_date:
+            current_end_date = end_date
 
-    print("False Awakenings: ")
-    for key, value in false_awakening_data.items():
-        print(f'Headset ID: {key}, False Awakenings: {str(value)}')
+        print(f"Processing data from {current_start_date} to {current_end_date}...")
 
-    return all_logs_in_str, all_voice_sessions, voice_data, false_awakening_data
+        voice_data = []
+
+        for session in all_voice_sessions:
+            # Extract the session date from the session data
+            session_date_str = session[1][
+                               1:18]  # Assuming the date is in the format 'MM/DD/YY HH:MM:SS' at the start of the session
+            session_date = datetime.strptime(session_date_str, "%m/%d/%y %H:%M:%S")
+
+            # Check if the session date is within the current week range
+            if current_start_date <= session_date <= current_end_date:
+                this_session_data = get_voice_session_data(session)
+
+                if this_session_data is not None:
+                    voice_data.append(this_session_data)
+                    all_voice_data.append(this_session_data)
+
+        print("Extracting False Awakenings...")
+        false_awakening_data = extract_false_awakenings(voice_data, criteria)
+
+        print("False Awakenings: ")
+        for key, value in false_awakening_data.items():
+            if key in headsets:  # Only process headsets in the specified list
+                print(f'Headset ID: {key}, False Awakenings: {str(value)}')
+
+                # Update the uptimes dictionary with false awakening data
+                if (current_start_date, current_end_date) not in weekly_uptimes:
+                    weekly_uptimes[(current_start_date, current_end_date)] = {}
+
+                if key in filtered_uptimes:
+                    # Check if the value in uptimes is already a dictionary
+                    if isinstance(filtered_uptimes[key], dict):
+                        weekly_uptimes[(current_start_date, current_end_date)][key] = {
+                            'uptime': filtered_uptimes[key].get('uptime', 0),
+                            'false_triggers': value
+                        }
+                    else:
+                        weekly_uptimes[(current_start_date, current_end_date)][key] = {
+                            'uptime': filtered_uptimes[key],
+                            'false_triggers': value
+                        }
+
+        # Move to the next week
+        current_start_date = current_end_date + timedelta(seconds=1)
+
+    # Print the updated weekly uptimes dictionary
+    for week, data in weekly_uptimes.items():
+        print(f"Week {week}: {data}")
+
+    return all_logs_in_str, all_voice_sessions, all_voice_data, false_awakening_data, weekly_uptimes
+
+
+def get_rates(weekly_uptimes):
+    rates = {}
+
+    # Iterate over each week in the weekly_uptimes dictionary
+    for week, data in weekly_uptimes.items():
+        start_date, end_date = week
+
+        # Calculate the false trigger rates for each headset
+        for headset_id, value in data.items():
+            if headset_id not in rates:
+                rates[headset_id] = []
+
+            if isinstance(value, dict) and value['uptime'] > 0:  # Ensure uptime is greater than 0 to avoid division by zero
+                rate = (value['false_triggers'] / value['uptime']) * 100
+                rates[headset_id].append({'week': (start_date, end_date), 'rate': rate})  # change so that "week" is actually a duration set by the user
+            else:
+                rates[headset_id].append({'week': (start_date, end_date), 'rate': None})
+
+    # Print the entire rates dictionary before returning it
+    print("\nComplete Rates Dictionary:")
+    for headset_id, data in rates.items():
+        print(f"Headset ID: {headset_id}")
+        for entry in data:
+            week_start, week_end = entry['week']
+            rate = entry['rate']
+            if rate is not None:
+                print(f"  Week from {week_start.strftime('%Y-%m-%d')} to {week_end.strftime('%Y-%m-%d')}: {rate:.2f}%")
+            else:
+                print(f"  Week from {week_start.strftime('%Y-%m-%d')} to {week_end.strftime('%Y-%m-%d')}: N/A (Uptime is 0)")
+
+    return rates
+
+def plot_headset_data(rates):
+    # Determine the common x-axis and y-axis limits
+    all_weeks = []
+    all_rates = []
+
+    for data in rates.values():
+        all_weeks.extend([f"{entry['week'][0].strftime('%Y-%m-%d')} to {entry['week'][1].strftime('%Y-%m-%d')}" for entry in data])
+        all_rates.extend([entry['rate'] for entry in data if entry['rate'] is not None])
+
+    # Get unique weeks and sort them
+    unique_weeks = sorted(set(all_weeks))
+    min_rate = min(all_rates)
+    max_rate = max(all_rates)
+
+    # Determine the number of subplots needed
+    num_headsets = len(rates)
+    num_cols = 2  # Number of columns for subplots
+    num_rows = (num_headsets + num_cols - 1) // num_cols  # Calculate the number of rows needed
+
+    # Create subplots
+    fig, axes = plt.subplots(num_rows, num_cols, figsize=(15, num_rows * 5), squeeze=False)
+
+    # Iterate over each headset in the rates dictionary
+    for idx, (headset_id, data) in enumerate(rates.items()):
+        row = idx // num_cols
+        col = idx % num_cols
+        ax = axes[row, col]
+
+        weeks = [f"{entry['week'][0].strftime('%Y-%m-%d')} to {entry['week'][1].strftime('%Y-%m-%d')}" for entry in data]
+        rates_values = [entry['rate'] for entry in data]
+
+        # Plotting the data
+        ax.plot(weeks, rates_values, label='False Trigger Rate (%)', marker='o')
+
+        # Adding labels and title
+        ax.set_xlabel('Week')
+        ax.set_ylabel('False Trigger Rate (%)')
+        ax.set_title(f'False Trigger Rate for Headset {headset_id} Over Time')
+        ax.legend()
+        ax.grid(True)
+
+        # Set the same scale for all plots
+        ax.set_ylim(min_rate, max_rate)
+        ax.set_xticks(range(len(weeks)))
+        ax.set_xticklabels(weeks, rotation=45)
+
+    # Adjust layout to prevent overlap
+    plt.tight_layout()
+    plt.show()
+    plt.pause(100)
 
 if __name__ == '__main__':
     ##get headset on off list
-    # m4_log_path = 'C:/Users/mmarks/MykahFiles/Projects/FalseAwakenings/SYSTEM/logs/enc/m4_hs2_hs8/'
-    # m4_log_path = 'C:/Users/mmarks/MykahFiles/Projects/FalseAwakenings/SYSTEM/logs/enc/m4_jackinthebox/'
     m4_log_path = 'C:/Users/mmarks/MykahFiles/Projects/FalseAwakenings/SYSTEM/logs/enc/m4/'
-    # path_to_ve_logs = 'C:/Users/mmarks/MykahFiles/Projects/FalseAwakenings/SYSTEM/logs/enc/voice_engine_2024-12-10/'
-    # path_to_ve_logs = 'C:/Users/mmarks/MykahFiles/Projects/FalseAwakenings/SYSTEM/logs/enc/voice_engine_jackinthebox/'
     path_to_ve_logs = 'C:/Users/mmarks/MykahFiles/Projects/FalseAwakenings/SYSTEM/logs/enc/voice_engine/'
 
-    non_incl_criteria = ["Timeout", "Other"]
-    incl_criteria = ["Reject", "Timeout", "Other", "Reject-User Not Notified", "Timeout-User Not Notified"]
+
 
     # start_date = "2024-10-11 11:50:00"
     start_date = "2024-11-1 00:00:00"
@@ -545,9 +671,15 @@ if __name__ == '__main__':
     print("--------------------PROCESSING HEADSET DATA-------------------")
     raw_list, durations_dict, uptimes = get_hs_durations(m4_log_path, start_date, end_date)
 
+
     ##get voice data
     print("--------------------PROCESSING VOICE DATA-------------------")
-    voice_logs_as_str, all_voice_sessions_list, voice_data_dict, false_awakening_data = get_false_awakening_data_bound(path_to_ve_logs, start_date, end_date, non_incl_criteria)
-    # voice_logs_as_str, all_voice_sessions_list, voice_data_dict, false_awakening_data = get_false_awakening_data_bound(path_to_ve_logs, start_date, end_date, incl_criteria)
+    selection = input("\nEnter 1 for non-inclusive search criteria, 2 for inclusive search criteria (regarding Most Likely Outcome categories)")
+    headsets = input("Enter each headset ID you wish to view separated by a space: ").split()
+    date_scale = input("How many days at a time would you like to look at? Enter as a number: ")
+    voice_logs_as_str, all_voice_sessions_list, voice_data_dict, false_awakening_data, weekly_uptimes_with_false_triggers = get_false_awakening_data_bound(path_to_ve_logs, start_date, end_date, selection, headsets, date_scale, uptimes)
+
+    rates = get_rates(weekly_uptimes_with_false_triggers)
+    plot_headset_data(rates)
 
     
