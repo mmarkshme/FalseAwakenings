@@ -232,9 +232,9 @@ def process_data_set_for_duration(headset_on_off_raw_list, all_data, start_date,
     on_pattern = 'Headset([0-9]+): 0 0 1'
     off_pattern = 'PP([0-9]+) disconnected$'
 
-    # Convert start_date and end_date to datetime objects
-    start_date = datetime.strptime(start_date, "%Y-%m-%d %H:%M:%S")
-    end_date = datetime.strptime(end_date, "%Y-%m-%d %H:%M:%S")
+    # # Convert start_date and end_date to datetime objects
+    # start_date = datetime.strptime(start_date, "%Y-%m-%d %H:%M:%S")
+    # end_date = datetime.strptime(end_date, "%Y-%m-%d %H:%M:%S")
 
     # Loop through each line in logs
     for index, line in enumerate(headset_on_off_raw_list):
@@ -480,7 +480,7 @@ def get_hs_durations(m4_log_path, start_date, end_date):
 
     return headset_on_off_raw_list, durations_dict, uptimes_in_hours
 
-def get_false_awakening_data_bound(path_to_ve_logs, start_date, end_date, selection, headsets, days, uptimes):
+def get_false_awakening_data_bound(path_to_ve_logs, start_date, end_date, selection, headsets, uptimes, days):
     if selection == 1:
         criteria = ["Timeout", "Other"]
     else:
@@ -495,22 +495,23 @@ def get_false_awakening_data_bound(path_to_ve_logs, start_date, end_date, select
     all_voice_sessions = parse_all_voice_logs_by_voice_session(all_logs_in_str)
 
     print("Processing Voice Data...")
-    weekly_uptimes = {}
+    uptimes_in_time_slot = {}
     all_voice_data = []
 
     # Convert start_date and end_date to datetime objects
-    start_date = datetime.strptime(start_date, "%Y-%m-%d %H:%M:%S")
-    end_date = datetime.strptime(end_date, "%Y-%m-%d %H:%M:%S")
+    # start_date = datetime.strptime(start_date, "%Y-%m-%d %H:%M:%S")
+    # end_date = datetime.strptime(end_date, "%Y-%m-%d %H:%M:%S")
 
     # Filter uptimes to include only selected headsets
     filtered_uptimes = {key: value for key, value in uptimes.items() if key in headsets}
 
-    # Initialize the current start date for the first week
+    # Initialize the current start date for the first interval
     current_start_date = start_date
 
+    days = int(days) - 1
     while current_start_date <= end_date:
-        # Calculate the end date for the current week
-        current_end_date = current_start_date + timedelta(days=6, hours=23, minutes=59, seconds=59)
+        # Calculate the end date for the current interval
+        current_end_date = current_start_date + timedelta(days=days, hours=23, minutes=59, seconds=59)
 
         # Ensure the current end date does not exceed the overall end date
         if current_end_date > end_date:
@@ -522,11 +523,10 @@ def get_false_awakening_data_bound(path_to_ve_logs, start_date, end_date, select
 
         for session in all_voice_sessions:
             # Extract the session date from the session data
-            session_date_str = session[1][
-                               1:18]  # Assuming the date is in the format 'MM/DD/YY HH:MM:SS' at the start of the session
+            session_date_str = session[1][1:18]  # Assuming the date is in the format 'MM/DD/YY HH:MM:SS' at the start of the session
             session_date = datetime.strptime(session_date_str, "%m/%d/%y %H:%M:%S")
 
-            # Check if the session date is within the current week range
+            # Check if the session date is within the current interval range
             if current_start_date <= session_date <= current_end_date:
                 this_session_data = get_voice_session_data(session)
 
@@ -543,38 +543,37 @@ def get_false_awakening_data_bound(path_to_ve_logs, start_date, end_date, select
                 print(f'Headset ID: {key}, False Awakenings: {str(value)}')
 
                 # Update the uptimes dictionary with false awakening data
-                if (current_start_date, current_end_date) not in weekly_uptimes:
-                    weekly_uptimes[(current_start_date, current_end_date)] = {}
+                if (current_start_date, current_end_date) not in uptimes_in_time_slot:
+                    uptimes_in_time_slot[(current_start_date, current_end_date)] = {}
 
                 if key in filtered_uptimes:
                     # Check if the value in uptimes is already a dictionary
                     if isinstance(filtered_uptimes[key], dict):
-                        weekly_uptimes[(current_start_date, current_end_date)][key] = {
+                        uptimes_in_time_slot[(current_start_date, current_end_date)][key] = {
                             'uptime': filtered_uptimes[key].get('uptime', 0),
                             'false_triggers': value
                         }
                     else:
-                        weekly_uptimes[(current_start_date, current_end_date)][key] = {
+                        uptimes_in_time_slot[(current_start_date, current_end_date)][key] = {
                             'uptime': filtered_uptimes[key],
                             'false_triggers': value
                         }
 
-        # Move to the next week
+        # Move to the next interval
         current_start_date = current_end_date + timedelta(seconds=1)
 
     # Print the updated weekly uptimes dictionary
-    for week, data in weekly_uptimes.items():
+    for week, data in uptimes_in_time_slot.items():
         print(f"Week {week}: {data}")
 
-    return all_logs_in_str, all_voice_sessions, all_voice_data, false_awakening_data, weekly_uptimes
+    return all_logs_in_str, all_voice_sessions, all_voice_data, false_awakening_data, uptimes_in_time_slot
 
-
-def get_rates(weekly_uptimes):
+def get_individual_rates(uptimes_in_time_slot):
     rates = {}
 
     # Iterate over each week in the weekly_uptimes dictionary
-    for week, data in weekly_uptimes.items():
-        start_date, end_date = week
+    for time_interval, data in uptimes_in_time_slot.items():
+        start_date, end_date = time_interval
 
         # Calculate the false trigger rates for each headset
         for headset_id, value in data.items():
@@ -583,74 +582,217 @@ def get_rates(weekly_uptimes):
 
             if isinstance(value, dict) and value['uptime'] > 0:  # Ensure uptime is greater than 0 to avoid division by zero
                 rate = (value['false_triggers'] / value['uptime']) * 100
-                rates[headset_id].append({'week': (start_date, end_date), 'rate': rate})  # change so that "week" is actually a duration set by the user
+                rates[headset_id].append({'time interval': (start_date, end_date), 'rate': rate})  # change so that "week" is actually a duration set by the user
             else:
-                rates[headset_id].append({'week': (start_date, end_date), 'rate': None})
+                rates[headset_id].append({'time interval': (start_date, end_date), 'rate': None})
 
     # Print the entire rates dictionary before returning it
     print("\nComplete Rates Dictionary:")
     for headset_id, data in rates.items():
         print(f"Headset ID: {headset_id}")
         for entry in data:
-            week_start, week_end = entry['week']
+            time_interval_start, time_interval_end = entry['time interval']
             rate = entry['rate']
             if rate is not None:
-                print(f"  Week from {week_start.strftime('%Y-%m-%d')} to {week_end.strftime('%Y-%m-%d')}: {rate:.2f}%")
+                print(f"  Time interval from {time_interval_start.strftime('%Y-%m-%d')} to {time_interval_end.strftime('%Y-%m-%d')}: {rate:.2f}%")
             else:
-                print(f"  Week from {week_start.strftime('%Y-%m-%d')} to {week_end.strftime('%Y-%m-%d')}: N/A (Uptime is 0)")
+                print(f"  Time interval from {time_interval_start.strftime('%Y-%m-%d')} to {time_interval_end.strftime('%Y-%m-%d')}: N/A (Uptime is 0)")
 
     return rates
 
-def plot_headset_data(rates):
+def get_overall_rates_over_time(uptimes_in_time_interval):
+    rates_over_interval = {}
+
+    # Iterate over each week in the weekly_uptimes dictionary
+    for time_interval, data in uptimes_in_time_interval.items():
+        total_false_triggers = 0
+        total_uptime = 0
+
+        # Sum up the false triggers and uptime for each headset
+        for headset_id, value in data.items():
+            if isinstance(value, dict) and value['uptime'] > 0:
+                total_false_triggers += value['false_triggers']
+                total_uptime += value['uptime']
+
+        # Calculate the overall false trigger rate for the week
+        if total_uptime > 0:
+            overall_rate = (total_false_triggers / total_uptime) * 100
+        else:
+            overall_rate = None
+
+        # Store the rate in the dictionary with the week as the key
+        rates_over_interval[time_interval] = overall_rate
+
+    return rates_over_interval
+
+def plot_individual_headset_data(rates, uptimes_and_false_triggers, time_interval):
     # Determine the common x-axis and y-axis limits
-    all_weeks = []
+    all_time_intervals = []
     all_rates = []
 
     for data in rates.values():
-        all_weeks.extend([f"{entry['week'][0].strftime('%Y-%m-%d')} to {entry['week'][1].strftime('%Y-%m-%d')}" for entry in data])
+        all_time_intervals.extend([f"{entry['time interval'][0].strftime('%Y-%m-%d')} to {entry['time interval'][1].strftime('%Y-%m-%d')}" for entry in data])
         all_rates.extend([entry['rate'] for entry in data if entry['rate'] is not None])
 
     # Get unique weeks and sort them
-    unique_weeks = sorted(set(all_weeks))
-    min_rate = min(all_rates)
-    max_rate = max(all_rates)
+    unique_weeks = sorted(set(all_time_intervals))
 
-    # Determine the number of subplots needed
+
+    # Create subplots for each headset
     num_headsets = len(rates)
-    num_cols = 2  # Number of columns for subplots
-    num_rows = (num_headsets + num_cols - 1) // num_cols  # Calculate the number of rows needed
+    fig, axs = plt.subplots(num_headsets, 1, figsize=(8, 5 * num_headsets), sharex=True)
 
-    # Create subplots
-    fig, axes = plt.subplots(num_rows, num_cols, figsize=(15, num_rows * 5), squeeze=False)
+    if num_headsets == 1:
+        axs = [axs]
 
     # Iterate over each headset in the rates dictionary
-    for idx, (headset_id, data) in enumerate(rates.items()):
-        row = idx // num_cols
-        col = idx % num_cols
-        ax = axes[row, col]
-
-        weeks = [f"{entry['week'][0].strftime('%Y-%m-%d')} to {entry['week'][1].strftime('%Y-%m-%d')}" for entry in data]
+    for i, (headset_id, data) in enumerate(rates.items()):
+        time_intervals = [f"{entry['time interval'][0].strftime('%Y-%m-%d')} to {entry['time interval'][1].strftime('%Y-%m-%d')}" for entry in data]
         rates_values = [entry['rate'] for entry in data]
 
-        # Plotting the data
-        ax.plot(weeks, rates_values, label='False Trigger Rate (%)', marker='o')
+        # Extract total uptime for each week
+        total_uptimes = []
+        for entry in data:
+            time_interval = entry['time interval']
+            total_uptime = sum(value['uptime'] for value in uptimes_and_false_triggers[time_interval].values() if 'uptime' in value)
+            total_uptimes.append(total_uptime)
 
-        # Adding labels and title
-        ax.set_xlabel('Week')
-        ax.set_ylabel('False Trigger Rate (%)')
-        ax.set_title(f'False Trigger Rate for Headset {headset_id} Over Time')
-        ax.legend()
-        ax.grid(True)
+        # Plotting the false trigger rates
+        ax1 = axs[i]
+        ax1.plot(time_intervals, rates_values, label=f'False Trigger Rate (Headset {headset_id})', marker='o', color='b')
+        ax1.set_ylabel('False Triggers per Hours of Uptime', color='b')
+        ax1.tick_params(axis='y', labelcolor='b')
 
-        # Set the same scale for all plots
-        ax.set_ylim(min_rate, max_rate)
-        ax.set_xticks(range(len(weeks)))
-        ax.set_xticklabels(weeks, rotation=45)
+        # Set the y-axis limits for false trigger rates if there are valid rates
+        if any(rate is not None for rate in rates_values):
+            min_rate = min(rate for rate in rates_values if rate is not None)
+            max_rate = max(rate for rate in rates_values if rate is not None)
+            ax1.set_ylim(min_rate, max_rate)
+
+        # Create a second y-axis for the total uptimes
+        ax2 = ax1.twinx()
+        ax2.plot(time_intervals, total_uptimes, label=f'Total Uptime (Headset {headset_id})', marker='x', color='g')
+        ax2.set_ylabel('Total Uptime (hours)', color='g')
+        ax2.tick_params(axis='y', labelcolor='g')
+
+        # Adding title and grid
+        ax1.set_title(f'False Trigger Rate and Total Uptime for Headset {headset_id} Over Time')
+        ax1.grid(True)
+
+        # Add legends
+        ax1.legend(loc='upper left')
+        ax2.legend(loc='upper right')
+
+    # Set the x-axis ticks
+    # plt.xticks(range(len(unique_weeks)), unique_weeks, rotation=45)
+    # plt.xlabel(f'Interval of {time_interval} days')
+
+    # Set the x-axis ticks with only the date portion
+    unique_weeks = [unique_weeks.split(' ')[0] for unique_weeks in unique_weeks]
+    plt.xticks(range(len(unique_weeks)), unique_weeks, rotation=45)
+    plt.xlabel(f'Interval of {time_interval} days')
 
     # Adjust layout to prevent overlap
     plt.tight_layout()
     plt.show()
     plt.pause(100)
+
+def plot_overall_rates(rates, uptimes_and_false_triggers, time_interval):
+    # Extract weeks and rates from the dictionary
+    interval = [f"{interval[0]} to {interval[1]}" for interval in rates.keys()]
+    overall_rates = list(rates.values())
+
+    # Extract total uptime for each week
+    total_uptimes = []
+    for week in rates.keys():
+        total_uptime = sum(value['uptime'] for value in uptimes_and_false_triggers[week].values() if 'uptime' in value)
+        total_uptimes.append(total_uptime)
+
+    # Create a plot for the overall rates and total uptimes
+    fig, ax1 = plt.subplots(figsize=(13, 6))
+
+    # Plot the overall rates
+    ax1.plot(interval, overall_rates, label='Overall Rate', marker='o', color='b')
+    ax1.set_xlabel(f'Interval of {time_interval} days')
+    ax1.set_ylabel('False Triggers per Hours of Uptime', color='b')
+    ax1.tick_params(axis='y', labelcolor='b')
+
+    # Set the y-axis limits for overall rates if there are valid rates
+    if any(rate is not None for rate in overall_rates):
+        min_rate = min(rate for rate in overall_rates if rate is not None)
+        max_rate = max(rate for rate in overall_rates if rate is not None)
+        ax1.set_ylim(min_rate, max_rate)
+
+    # Create a second y-axis for the total uptimes
+    ax2 = ax1.twinx()
+    ax2.plot(interval, total_uptimes, label='Total Uptime', marker='x', color='g')
+    ax2.set_ylabel('Total Uptime (hours)', color='g')
+    ax2.tick_params(axis='y', labelcolor='g')
+
+    # Adding title and grid
+    plt.title('Overall False Trigger Rate and Total Uptime Over Time')
+    fig.tight_layout()
+    plt.grid(True)
+
+    # Set the x-axis ticks with only the date portion
+    tick_intervals = [interval.split(' ')[0] for interval in interval]
+    plt.xticks(range(len(tick_intervals)), tick_intervals, rotation=45)
+
+    # Add legends
+    ax1.legend(loc='upper left')
+    ax2.legend(loc='upper right')
+
+    # Adjust layout to prevent overlap
+    plt.tight_layout()
+    plt.show()
+    plt.pause(100)
+
+def get_valid_date(prompt):
+    while True:
+        date_str = input(prompt)
+        try:
+            # Try to parse the date string to a datetime object
+            date = datetime.strptime(date_str, '%Y-%m-%d %H:%M:%S')
+            return date
+        except ValueError:
+            print("Invalid date format. Please enter the date in the format 'YYYY-MM-DD HH:MM:SS'.")
+
+def is_valid_headset_id(headset_id):
+    return headset_id is not None and isinstance(headset_id, str) and headset_id.isdigit() and (1 <= len(headset_id) <= 2)
+
+def get_valid_headset_ids():
+    while True:
+        headsets = input("Enter each headset ID you wish to view separated by a space: ").split()
+        valid_headsets = []
+        invalid_headsets = []
+
+        for headset_id in headsets:
+            if is_valid_headset_id(headset_id):
+                valid_headsets.append(headset_id)
+            else:
+                invalid_headsets.append(headset_id)
+
+        if invalid_headsets:
+            print(f"Invalid headset IDs: {', '.join(invalid_headsets)}. Each ID must be a number with 1 to 2 digits. Please try again.")
+        else:
+            return valid_headsets
+
+def get_selection(prompt):
+    while True:
+        selection = input(prompt)
+        if selection in ['1', '2']:
+            return int(selection)
+        else:
+            print("Invalid selection. Please enter 1 or 2.")
+
+def get_time_interval():
+    while True:
+        selection = input("How many days at a time would you like to retrieve false awakening data for? Enter as a number: ")
+        if selection == '':
+            print("Invalid selection. Please enter the time interval in number of days.")
+        else:
+            return int(selection)
+
 
 if __name__ == '__main__':
     ##get headset on off list
@@ -658,11 +800,21 @@ if __name__ == '__main__':
     path_to_ve_logs = 'C:/Users/mmarks/MykahFiles/Projects/FalseAwakenings/SYSTEM/logs/enc/voice_engine/'
 
 
+    start_date = get_valid_date("Please enter the start date you would like to retrieve data for in the format 'YYYY-MM-DD HH:MM:SS' where the time is according to a 24 hour clock.")
+    end_date = get_valid_date("Please enter the end date you would like to retrieve data for in the format 'YYYY-MM-DD HH:MM:SS' where the time is according to a 24 hour clock.")
+    search_criteria = get_selection("\nEnter 1 for less strict search criteria, 2 for more strict search criteria (regarding Most Likely Outcome categories): ")
+    headsets = get_valid_headset_ids()
 
-    # start_date = "2024-10-11 11:50:00"
-    start_date = "2024-11-1 00:00:00"
-    # end_date = "2024-10-23 11:30:00"
-    end_date = "2024-12-16 23:59:59"
+    time_interval = get_time_interval()
+    rate_type = int(get_selection("Do you want to look at the rate of false triggers for each headset separately (Enter 1) or in terms of the overall rate of false triggers across all selected headsets (Enter 2) ?"))
+
+
+    if start_date == '':
+        # start_date = "2024-10-11 11:50:00"
+        start_date = "2024-11-01 00:00:00"
+    if end_date == '':
+        # end_date = "2024-10-23 11:30:00"
+        end_date = "2025-01-01 23:59:59"
 
     print("M4 Log Path: " + m4_log_path)
     print("Voice Engine Log Path: " + path_to_ve_logs)
@@ -674,12 +826,17 @@ if __name__ == '__main__':
 
     ##get voice data
     print("--------------------PROCESSING VOICE DATA-------------------")
-    selection = input("\nEnter 1 for non-inclusive search criteria, 2 for inclusive search criteria (regarding Most Likely Outcome categories)")
-    headsets = input("Enter each headset ID you wish to view separated by a space: ").split()
-    date_scale = input("How many days at a time would you like to look at? Enter as a number: ")
-    voice_logs_as_str, all_voice_sessions_list, voice_data_dict, false_awakening_data, weekly_uptimes_with_false_triggers = get_false_awakening_data_bound(path_to_ve_logs, start_date, end_date, selection, headsets, date_scale, uptimes)
 
-    rates = get_rates(weekly_uptimes_with_false_triggers)
-    plot_headset_data(rates)
+    voice_logs_as_str, all_voice_sessions_list, voice_data_dict, false_awakening_data, uptimes_and_false_triggers = get_false_awakening_data_bound(path_to_ve_logs, start_date, end_date, search_criteria, headsets, uptimes, time_interval)
+
+
+    if rate_type == 1:
+        rates = get_individual_rates(uptimes_and_false_triggers)
+        plot_individual_headset_data(rates, uptimes_and_false_triggers, time_interval)
+    elif rate_type == 2:
+        rates = get_overall_rates_over_time(uptimes_and_false_triggers)
+        plot_overall_rates(rates, uptimes_and_false_triggers, time_interval)
+
+
 
     
