@@ -429,8 +429,7 @@ def extract_false_awakenings(voice_data, criteria):
 
     return sorted_false_awakenings
 
-###gets the total uptime for each headset from the durations list
-def get_total_uptime_per_headset(durations):
+def get_uptimes_per_headset(durations, days):
     headset_uptimes = {}
 
     for hs_id, times in durations.items():
@@ -441,18 +440,29 @@ def get_total_uptime_per_headset(durations):
         for on_time, off_time in zipped:
             if off_time > on_time:  # Only subtract if off time is greater than on time
                 duration = off_time - on_time
-                durations_list.append(duration)
-                # print(f'HS: {hs_id}, On time: {on_time}, Off time: {off_time}, Duration: {duration}')
+                durations_list.append((on_time, duration))
         headset_uptimes[hs_id] = durations_list
 
-    # Sum the durations for each headset and convert to seconds
-    total_durations_seconds = {}
+    # Calculate total uptime per headset within each date range
+    total_uptime_per_period = {}
+    original_total_uptime = {}
 
     for hs_id, durations_list in headset_uptimes.items():
-        total_duration = sum(durations_list, timedelta())
-        total_durations_seconds[hs_id] = total_duration.total_seconds()
+        period_uptimes = {}
+        total_duration = timedelta()
+        for on_time, duration in durations_list:
+            period_start = on_time - timedelta(days=on_time.day % days)
+            period_end = period_start + timedelta(days=days)
+            period_key = f"{period_start.date()} to {period_end.date()}"
+            if period_key not in period_uptimes:
+                period_uptimes[period_key] = timedelta()
+            period_uptimes[period_key] += duration
+            total_duration += duration
 
-    return total_durations_seconds
+        total_uptime_per_period[hs_id] = {k: v.total_seconds() for k, v in period_uptimes.items()}
+        original_total_uptime[hs_id] = total_duration.total_seconds()
+
+    return total_uptime_per_period, original_total_uptime
 
 #################################################################
 
@@ -460,27 +470,35 @@ def get_total_uptime_per_headset(durations):
 
 ###gets all headset data
 ###return all iterations of the data. From raw log lines ->  processed durations -> total uptimes
-def get_hs_durations(m4_log_path, start_date, end_date):
+def get_hs_durations(m4_log_path, start_date, end_date, time_interval):
     print("Getting Headset Log Lines as a list...")
     headset_on_off_raw_list, all_data = get_all_base_ext_headset_connected_duration(m4_log_path)
     print("Reformatting log lines to dictionaries...")
     durations_dict = process_data_set_for_duration(headset_on_off_raw_list, all_data, start_date, end_date)
     print("Calculating Uptimes per headset ID...")
-    uptimes = get_total_uptime_per_headset(durations_dict)
+    uptimes_per_interval, total_uptimes = get_uptimes_per_headset(durations_dict, time_interval)
     print("Headset Uptimes(Seconds): ")
-    print(uptimes)
+    print(total_uptimes)
 
     # Convert seconds to hours
-    uptimes_in_hours = {key: value / 3600 for key, value in uptimes.items()}
+    total_uptimes_in_hours = {key: value / 3600 for key, value in total_uptimes.items()}
     print("Headset Uptimes(Hours): ")
-    print(uptimes_in_hours)
+    print(total_uptimes_in_hours)
     # Sum the uptimes in hours
-    total_uptime_hours = sum(uptimes_in_hours.values())
+    total_uptime_hours = sum(total_uptimes_in_hours.values())
     print(f"Total uptime in hours: {total_uptime_hours}")
 
-    return headset_on_off_raw_list, durations_dict, uptimes_in_hours
+    # Convert seconds to hours for each interval
+    uptimes_hours_per_interval = {
+        outer_key: {inner_key: value / 3600 for inner_key, value in inner_dict.items()}
+        for outer_key, inner_dict in uptimes_per_interval.items()
+    }
+    # uptimes_hours_per_interval = {key: value / 3600 for key, value in uptimes_per_interval.items()}
 
-def get_false_awakening_data_bound(path_to_ve_logs, start_date, end_date, selection, headsets, uptimes, days):
+
+    return headset_on_off_raw_list, durations_dict, total_uptime_hours, uptimes_hours_per_interval
+
+def get_false_awakening_data_bound(path_to_ve_logs, start_date, end_date, selection, headsets, uptimes_hours_per_interval, days):
     if selection == 1:
         criteria = ["Timeout", "Other"]
     else:
@@ -495,15 +513,11 @@ def get_false_awakening_data_bound(path_to_ve_logs, start_date, end_date, select
     all_voice_sessions = parse_all_voice_logs_by_voice_session(all_logs_in_str)
 
     print("Processing Voice Data...")
-    uptimes_in_time_slot = {}
+    uptime_hours_in_time_slot = {}
     all_voice_data = []
 
-    # Convert start_date and end_date to datetime objects
-    # start_date = datetime.strptime(start_date, "%Y-%m-%d %H:%M:%S")
-    # end_date = datetime.strptime(end_date, "%Y-%m-%d %H:%M:%S")
-
     # Filter uptimes to include only selected headsets
-    filtered_uptimes = {key: value for key, value in uptimes.items() if key in headsets}
+    filtered_uptimes = {key: value for key, value in uptimes_hours_per_interval.items() if key in headsets}
 
     # Initialize the current start date for the first interval
     current_start_date = start_date
@@ -543,30 +557,31 @@ def get_false_awakening_data_bound(path_to_ve_logs, start_date, end_date, select
                 print(f'Headset ID: {key}, False Awakenings: {str(value)}')
 
                 # Update the uptimes dictionary with false awakening data
-                if (current_start_date, current_end_date) not in uptimes_in_time_slot:
-                    uptimes_in_time_slot[(current_start_date, current_end_date)] = {}
+                if (current_start_date.date(), current_end_date.date()) not in uptime_hours_in_time_slot:
+                    uptime_hours_in_time_slot[(current_start_date.date(), current_end_date.date())] = {}
 
                 if key in filtered_uptimes:
-                    # Check if the value in uptimes is already a dictionary
-                    if isinstance(filtered_uptimes[key], dict):
-                        uptimes_in_time_slot[(current_start_date, current_end_date)][key] = {
-                            'uptime': filtered_uptimes[key].get('uptime', 0),
-                            'false_triggers': value
-                        }
-                    else:
-                        uptimes_in_time_slot[(current_start_date, current_end_date)][key] = {
-                            'uptime': filtered_uptimes[key],
-                            'false_triggers': value
-                        }
+                    # Iterate through each interval and retrieve the uptime value
+                    for interval_key, uptime_value in filtered_uptimes[key].items():
+                        # Convert interval_key to datetime format for comparison
+                        interval_start_str, interval_end_str = interval_key.split(" to ")
+                        interval_start_date = datetime.strptime(interval_start_str, "%Y-%m-%d").date()
+                        interval_end_date = datetime.strptime(interval_end_str, "%Y-%m-%d").date()
+
+                        if (interval_start_date, interval_end_date) == (current_start_date.date(), current_end_date.date()):
+                            uptime_hours_in_time_slot[(current_start_date.date(), current_end_date.date())][key] = {
+                                'uptime': uptime_value,
+                                'false_triggers': value
+                            }
 
         # Move to the next interval
         current_start_date = current_end_date + timedelta(seconds=1)
 
     # Print the updated weekly uptimes dictionary
-    for week, data in uptimes_in_time_slot.items():
+    for week, data in uptime_hours_in_time_slot.items():
         print(f"Week {week}: {data}")
 
-    return all_logs_in_str, all_voice_sessions, all_voice_data, false_awakening_data, uptimes_in_time_slot
+    return all_logs_in_str, all_voice_sessions, all_voice_data, false_awakening_data, uptime_hours_in_time_slot
 
 def get_individual_rates(uptimes_in_time_slot):
     rates = {}
@@ -704,8 +719,8 @@ def plot_overall_rates(rates, uptimes_and_false_triggers, time_interval):
 
     # Extract total uptime for each week
     total_uptimes = []
-    for week in rates.keys():
-        total_uptime = sum(value['uptime'] for value in uptimes_and_false_triggers[week].values() if 'uptime' in value)
+    for period in rates.keys():
+        total_uptime = sum(value['uptime'] for value in uptimes_and_false_triggers[period].values() if 'uptime' in value)
         total_uptimes.append(total_uptime)
 
     # Create a plot for the overall rates and total uptimes
@@ -821,13 +836,13 @@ if __name__ == '__main__':
 
     ##process headset durations
     print("--------------------PROCESSING HEADSET DATA-------------------")
-    raw_list, durations_dict, uptimes = get_hs_durations(m4_log_path, start_date, end_date)
+    raw_list, durations_dict, total_uptime_hours, uptimes_hours_per_interval = get_hs_durations(m4_log_path, start_date, end_date, time_interval)
 
 
     ##get voice data
     print("--------------------PROCESSING VOICE DATA-------------------")
 
-    voice_logs_as_str, all_voice_sessions_list, voice_data_dict, false_awakening_data, uptimes_and_false_triggers = get_false_awakening_data_bound(path_to_ve_logs, start_date, end_date, search_criteria, headsets, uptimes, time_interval)
+    voice_logs_as_str, all_voice_sessions_list, voice_data_dict, false_awakening_data, uptimes_and_false_triggers = get_false_awakening_data_bound(path_to_ve_logs, start_date, end_date, search_criteria, headsets, uptimes_hours_per_interval, time_interval)
 
 
     if rate_type == 1:
